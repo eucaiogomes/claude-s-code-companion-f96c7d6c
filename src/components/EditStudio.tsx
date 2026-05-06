@@ -456,18 +456,7 @@ export default function EditStudio() {
   };
 
   // ===== Drag preview / insertion indicator (Canva/CapCut style) =====
-  type DragItem = { id: string; layer: number; start: number; length: number };
-  type DragPreview = {
-    anchorId: string;
-    items: DragItem[];
-    /** Per-layer ripple insertion point (only for the anchor's layer). */
-    insertAt: number | null;
-    insertLayer: number;
-    /** Length used to ripple-shift later clips on insertLayer. */
-    rippleLength: number;
-  };
-  const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
-  const dragPreviewRef = useRef<DragPreview | null>(null);
+  // (DragItem/DragPreview types and dragPreview state declared above for layerCount)
 
   /** Compute snap-aware preview from a proposed (start, layer) for a given anchor segment.
    *  When the anchor is part of a multi-selection, all selected items move with the same
