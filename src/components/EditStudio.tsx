@@ -887,7 +887,7 @@ export default function EditStudio() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [time, selectedIds]); // eslint-disable-line
+  }, [time, selectedIds, segments]); // eslint-disable-line
 
   const chapters = segments
     .filter((s) => s.kind === "slide")
