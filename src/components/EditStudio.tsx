@@ -253,13 +253,22 @@ export default function EditStudio() {
     () => Math.max(5, segments.reduce((a, s) => Math.max(a, endOf(s)), 0)),
     [segments],
   );
+  type DragItem = { id: string; layer: number; start: number; length: number };
+  type DragPreview = {
+    anchorId: string;
+    items: DragItem[];
+    insertAt: number | null;
+    insertLayer: number;
+    rippleLength: number;
+  };
+  const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
+  const dragPreviewRef = useRef<DragPreview | null>(null);
+
   const layerCount = useMemo(
     () => {
       const baseMax = segments.reduce((a, s) => Math.max(a, s.layer + 1), 0);
       const dragMax = dragPreview ? dragPreview.items.reduce((a, i) => Math.max(a, i.layer + 1), 0) : 0;
       const dragMin = dragPreview ? dragPreview.items.reduce((a, i) => Math.min(a, i.layer), 0) : 0;
-      // Reserve an extra slot when dragging above layer 0 so the phantom row
-      // shows up as a "new layer above" preview.
       const extra = dragMin < 0 ? -dragMin : 0;
       return Math.max(3, baseMax, dragMax) + 1 + extra;
     },
