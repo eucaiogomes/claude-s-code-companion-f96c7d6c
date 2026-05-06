@@ -466,13 +466,16 @@ export default function EditStudio() {
           : new Set([anchorId]);
       const group = segments.filter((s) => groupIds.has(s.id));
 
-      // Clamp deltas so no item goes below 0 (start or layer).
+      // Clamp deltas. Allow proposedLayer = -1 to create a NEW layer above the
+      // top one (the commit step normalizes negatives back to 0).
       const desiredDStart = Math.max(0, proposedStart) - anchor.start;
-      const desiredDLayer = Math.max(0, proposedLayer) - anchor.layer;
+      const desiredDLayer = proposedLayer - anchor.layer;
       const minStart = Math.min(...group.map((s) => s.start));
       const minLayer = Math.min(...group.map((s) => s.layer));
       const dStart = Math.max(desiredDStart, -minStart);
-      const dLayer = Math.max(desiredDLayer, -minLayer);
+      // -minLayer - 1 lets the topmost selected clip go one row above its origin
+      // (creating a fresh layer on top); we don't allow more than that.
+      const dLayer = Math.max(desiredDLayer, -minLayer - 1);
 
       const items: DragItem[] = group.map((s) => ({
         id: s.id,
@@ -481,12 +484,43 @@ export default function EditStudio() {
         length: lenOf(s),
       }));
 
-      // Insertion (ripple) when the dropped clip overlaps any clip already on
-      // the target layer — works for both same-layer reorder and cross-layer drops,
-      // so segments never visually stack on top of each other.
       const anchorItem = items.find((i) => i.id === anchorId)!;
-      const others = segments.filter((s) => !groupIds.has(s.id) && s.layer === anchorItem.layer);
       const anchorEnd = anchorItem.start + anchorItem.length;
+      const isCrossLayer = anchorItem.layer !== anchor.layer;
+
+      // Helper: does layer L have any non-group clip overlapping the anchor's window?
+      const layerOccupied = (L: number) =>
+        segments.some(
+          (s) =>
+            !groupIds.has(s.id) &&
+            s.layer === L &&
+            anchorItem.start < endOf(s) - 1e-3 &&
+            anchorEnd > s.start + 1e-3,
+        );
+
+      // CROSS-LAYER DROP: if the destination layer is occupied, hop to the next
+      // free layer in the direction of movement instead of stacking/rippling.
+      if (isCrossLayer && layerOccupied(anchorItem.layer)) {
+        const dir = anchorItem.layer < anchor.layer ? -1 : 1;
+        let L = anchorItem.layer;
+        for (let i = 0; i < 64; i++) {
+          L += dir;
+          if (L < -1) { L = -1; break; }
+          if (!layerOccupied(L)) break;
+        }
+        const shift = L - anchorItem.layer;
+        items.forEach((i) => (i.layer += shift));
+        return {
+          anchorId,
+          items,
+          insertAt: null,
+          insertLayer: L,
+          rippleLength: anchorItem.length,
+        };
+      }
+
+      // SAME-LAYER REORDER: keep the existing ripple/insertion behavior.
+      const others = segments.filter((s) => !groupIds.has(s.id) && s.layer === anchorItem.layer);
       const overlapping = others.find(
         (s) => anchorItem.start < endOf(s) - 1e-3 && anchorEnd > s.start + 1e-3,
       );
