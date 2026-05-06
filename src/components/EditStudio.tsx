@@ -254,8 +254,16 @@ export default function EditStudio() {
     [segments],
   );
   const layerCount = useMemo(
-    () => Math.max(3, segments.reduce((a, s) => Math.max(a, s.layer + 1), 0) + 1),
-    [segments],
+    () => {
+      const baseMax = segments.reduce((a, s) => Math.max(a, s.layer + 1), 0);
+      const dragMax = dragPreview ? dragPreview.items.reduce((a, i) => Math.max(a, i.layer + 1), 0) : 0;
+      const dragMin = dragPreview ? dragPreview.items.reduce((a, i) => Math.min(a, i.layer), 0) : 0;
+      // Reserve an extra slot when dragging above layer 0 so the phantom row
+      // shows up as a "new layer above" preview.
+      const extra = dragMin < 0 ? -dragMin : 0;
+      return Math.max(3, baseMax, dragMax) + 1 + extra;
+    },
+    [segments, dragPreview],
   );
 
   const active = useMemo(
