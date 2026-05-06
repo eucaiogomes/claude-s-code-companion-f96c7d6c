@@ -1528,7 +1528,7 @@ const KIND_STYLE: Record<Kind, { color: string; Icon: any }> = {
   image: { color: "bg-amber-500/30 ring-amber-500/60", Icon: Film },
 };
 
-const LayerRow = memo(function LayerRow({ layerIdx, segs, pxPerSec, totalPx, selectedIds, toggleSelect, trim, dragPreviewItems, dragInsertAt, dragRippleLength, draggingIds, onDragUpdate, onDragCommit, onDragCancel }: {
+const LayerRow = memo(function LayerRow({ layerIdx, segs, pxPerSec, totalPx, selectedIds, toggleSelect, trim, dragPreviewItems, dragInsertAt, dragRippleLength, draggingIds, onDragUpdate, onDragCommit, onDragCancel, isDropTarget, isNewLayer }: {
   layerIdx: number;
   segs: Segment[];
   pxPerSec: number;
@@ -1543,14 +1543,22 @@ const LayerRow = memo(function LayerRow({ layerIdx, segs, pxPerSec, totalPx, sel
   onDragUpdate: (id: string, proposedStart: number, proposedLayer: number) => void;
   onDragCommit: () => void;
   onDragCancel: () => void;
+  isDropTarget?: boolean;
+  isNewLayer?: boolean;
 }) {
   return (
     <div className="flex items-stretch">
-      <div className="flex w-20 shrink-0 items-center gap-1.5 py-2 text-xs text-muted-foreground">
-        <Plus className="h-3 w-3 opacity-50" /> Camada {layerIdx + 1}
+      <div className={`flex w-20 shrink-0 items-center gap-1.5 py-2 text-xs ${isDropTarget ? "text-primary font-medium" : "text-muted-foreground"}`}>
+        <Plus className="h-3 w-3 opacity-50" /> {isNewLayer ? "Nova camada" : `Camada ${layerIdx + 1}`}
       </div>
       <div
-        className="relative my-1 h-9 rounded bg-[hsl(var(--track-bg))] ring-1 ring-border/50"
+        className={`relative my-1 h-9 rounded transition-colors ${
+          isDropTarget
+            ? "bg-primary/15 ring-1 ring-primary/70"
+            : isNewLayer
+              ? "bg-primary/5 ring-1 ring-dashed ring-primary/40"
+              : "bg-[hsl(var(--track-bg))] ring-1 ring-border/50"
+        }`}
         style={{ width: totalPx }}
       >
         {segs.map((s) => {
