@@ -877,6 +877,13 @@ export default function EditStudio() {
         if (e.shiftKey) redo(); else undo();
       }
       if (mod && (e.key === "y" || e.key === "Y")) { e.preventDefault(); redo(); }
+      if (mod && (e.key === "a" || e.key === "A")) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable) return;
+        e.preventDefault();
+        setSelectedIds(new Set(segments.map((s) => s.id)));
+        toast.success(`${segments.length} clip(s) selecionado(s)`);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
