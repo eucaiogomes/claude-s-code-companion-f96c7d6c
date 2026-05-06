@@ -806,30 +806,38 @@ export default function EditStudio() {
   }, [dragPreview]);
   const EMPTY_PREVIEW: { id: string; layer: number; start: number; length: number }[] = [];
 
-  const layerRows = useMemo(
-    () =>
-      Array.from({ length: layerCount }).map((_, layerIdx) => (
+  const layerRows = useMemo(() => {
+    const dragMin = dragPreview ? dragPreview.items.reduce((a, i) => Math.min(a, i.layer), 0) : 0;
+    const startLayer = Math.min(0, dragMin);
+    const count = layerCount;
+    return Array.from({ length: count }).map((_, i) => {
+      const layerIdx = startLayer + i;
+      const isDropTarget = !!(dragPreview && dragPreview.insertLayer === layerIdx);
+      const isNewLayer = layerIdx < 0;
+      return (
         <LayerRow
           key={layerIdx}
           layerIdx={layerIdx}
-          segs={segmentsByLayer[layerIdx] ?? []}
+          segs={layerIdx >= 0 ? (segmentsByLayer[layerIdx] ?? []) : []}
           pxPerSec={PX_PER_SEC}
           totalPx={trackPxWidth}
           selectedIds={selectedIds}
           toggleSelect={toggleSelect}
           trim={trim}
           dragPreviewItems={previewItemsByLayer.get(layerIdx) ?? EMPTY_PREVIEW}
-          dragInsertAt={dragPreview && dragPreview.insertLayer === layerIdx ? dragPreview.insertAt : null}
-          dragRippleLength={dragPreview && dragPreview.insertLayer === layerIdx ? dragPreview.rippleLength : 0}
+          dragInsertAt={isDropTarget ? dragPreview!.insertAt : null}
+          dragRippleLength={isDropTarget ? dragPreview!.rippleLength : 0}
+          isDropTarget={isDropTarget}
+          isNewLayer={isNewLayer}
           draggingIds={draggingIds}
           onDragUpdate={updateDragPreview}
           onDragCommit={commitDrag}
           onDragCancel={cancelDrag}
         />
-      )),
+      );
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layerCount, segmentsByLayer, PX_PER_SEC, trackPxWidth, selectedIds, dragPreview, draggingIds, previewItemsByLayer],
-  );
+  }, [layerCount, segmentsByLayer, PX_PER_SEC, trackPxWidth, selectedIds, dragPreview, draggingIds, previewItemsByLayer]);
 
   const onRulerMouseDown = (e: React.MouseEvent) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
