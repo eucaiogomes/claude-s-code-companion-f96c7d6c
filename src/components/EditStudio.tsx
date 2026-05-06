@@ -253,26 +253,9 @@ export default function EditStudio() {
     () => Math.max(5, segments.reduce((a, s) => Math.max(a, endOf(s)), 0)),
     [segments],
   );
-  type DragItem = { id: string; layer: number; start: number; length: number };
-  type DragPreview = {
-    anchorId: string;
-    items: DragItem[];
-    insertAt: number | null;
-    insertLayer: number;
-    rippleLength: number;
-  };
-  const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
-  const dragPreviewRef = useRef<DragPreview | null>(null);
-
   const layerCount = useMemo(
-    () => {
-      const baseMax = segments.reduce((a, s) => Math.max(a, s.layer + 1), 0);
-      const dragMax = dragPreview ? dragPreview.items.reduce((a, i) => Math.max(a, i.layer + 1), 0) : 0;
-      const dragMin = dragPreview ? dragPreview.items.reduce((a, i) => Math.min(a, i.layer), 0) : 0;
-      const extra = dragMin < 0 ? -dragMin : 0;
-      return Math.max(3, baseMax, dragMax) + 1 + extra;
-    },
-    [segments, dragPreview],
+    () => Math.max(3, segments.reduce((a, s) => Math.max(a, s.layer + 1), 0) + 1),
+    [segments],
   );
 
   const active = useMemo(
@@ -456,7 +439,18 @@ export default function EditStudio() {
   };
 
   // ===== Drag preview / insertion indicator (Canva/CapCut style) =====
-  // (DragItem/DragPreview types and dragPreview state declared above for layerCount)
+  type DragItem = { id: string; layer: number; start: number; length: number };
+  type DragPreview = {
+    anchorId: string;
+    items: DragItem[];
+    /** Per-layer ripple insertion point (only for the anchor's layer). */
+    insertAt: number | null;
+    insertLayer: number;
+    /** Length used to ripple-shift later clips on insertLayer. */
+    rippleLength: number;
+  };
+  const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
+  const dragPreviewRef = useRef<DragPreview | null>(null);
 
   /** Compute snap-aware preview from a proposed (start, layer) for a given anchor segment.
    *  When the anchor is part of a multi-selection, all selected items move with the same
@@ -472,16 +466,13 @@ export default function EditStudio() {
           : new Set([anchorId]);
       const group = segments.filter((s) => groupIds.has(s.id));
 
-      // Clamp deltas. Allow proposedLayer = -1 to create a NEW layer above the
-      // top one (the commit step normalizes negatives back to 0).
+      // Clamp deltas so no item goes below 0 (start or layer).
       const desiredDStart = Math.max(0, proposedStart) - anchor.start;
-      const desiredDLayer = proposedLayer - anchor.layer;
+      const desiredDLayer = Math.max(0, proposedLayer) - anchor.layer;
       const minStart = Math.min(...group.map((s) => s.start));
       const minLayer = Math.min(...group.map((s) => s.layer));
       const dStart = Math.max(desiredDStart, -minStart);
-      // -minLayer - 1 lets the topmost selected clip go one row above its origin
-      // (creating a fresh layer on top); we don't allow more than that.
-      const dLayer = Math.max(desiredDLayer, -minLayer - 1);
+      const dLayer = Math.max(desiredDLayer, -minLayer);
 
       const items: DragItem[] = group.map((s) => ({
         id: s.id,
@@ -490,43 +481,12 @@ export default function EditStudio() {
         length: lenOf(s),
       }));
 
+      // Insertion (ripple) when the dropped clip overlaps any clip already on
+      // the target layer — works for both same-layer reorder and cross-layer drops,
+      // so segments never visually stack on top of each other.
       const anchorItem = items.find((i) => i.id === anchorId)!;
-      const anchorEnd = anchorItem.start + anchorItem.length;
-      const isCrossLayer = anchorItem.layer !== anchor.layer;
-
-      // Helper: does layer L have any non-group clip overlapping the anchor's window?
-      const layerOccupied = (L: number) =>
-        segments.some(
-          (s) =>
-            !groupIds.has(s.id) &&
-            s.layer === L &&
-            anchorItem.start < endOf(s) - 1e-3 &&
-            anchorEnd > s.start + 1e-3,
-        );
-
-      // CROSS-LAYER DROP: if the destination layer is occupied, hop to the next
-      // free layer in the direction of movement instead of stacking/rippling.
-      if (isCrossLayer && layerOccupied(anchorItem.layer)) {
-        const dir = anchorItem.layer < anchor.layer ? -1 : 1;
-        let L = anchorItem.layer;
-        for (let i = 0; i < 64; i++) {
-          L += dir;
-          if (L < -1) { L = -1; break; }
-          if (!layerOccupied(L)) break;
-        }
-        const shift = L - anchorItem.layer;
-        items.forEach((i) => (i.layer += shift));
-        return {
-          anchorId,
-          items,
-          insertAt: null,
-          insertLayer: L,
-          rippleLength: anchorItem.length,
-        };
-      }
-
-      // SAME-LAYER REORDER: keep the existing ripple/insertion behavior.
       const others = segments.filter((s) => !groupIds.has(s.id) && s.layer === anchorItem.layer);
+      const anchorEnd = anchorItem.start + anchorItem.length;
       const overlapping = others.find(
         (s) => anchorItem.start < endOf(s) - 1e-3 && anchorEnd > s.start + 1e-3,
       );
@@ -667,14 +627,7 @@ export default function EditStudio() {
           }
         }
       }
-      const result = placed.map((s) => byId.get(s.id) ?? s);
-      // If a clip was dragged above layer 0, shift everything down so layers
-      // remain non-negative. This effectively creates a brand-new top layer.
-      const minL = result.reduce((a, s) => Math.min(a, s.layer), 0);
-      if (minL < 0) {
-        return result.map((s) => ({ ...s, layer: s.layer - minL }));
-      }
-      return result;
+      return placed.map((s) => byId.get(s.id) ?? s);
     });
   };
 
@@ -806,38 +759,30 @@ export default function EditStudio() {
   }, [dragPreview]);
   const EMPTY_PREVIEW: { id: string; layer: number; start: number; length: number }[] = [];
 
-  const layerRows = useMemo(() => {
-    const dragMin = dragPreview ? dragPreview.items.reduce((a, i) => Math.min(a, i.layer), 0) : 0;
-    const startLayer = Math.min(0, dragMin);
-    const count = layerCount;
-    return Array.from({ length: count }).map((_, i) => {
-      const layerIdx = startLayer + i;
-      const isDropTarget = !!(dragPreview && dragPreview.insertLayer === layerIdx);
-      const isNewLayer = layerIdx < 0;
-      return (
+  const layerRows = useMemo(
+    () =>
+      Array.from({ length: layerCount }).map((_, layerIdx) => (
         <LayerRow
           key={layerIdx}
           layerIdx={layerIdx}
-          segs={layerIdx >= 0 ? (segmentsByLayer[layerIdx] ?? []) : []}
+          segs={segmentsByLayer[layerIdx] ?? []}
           pxPerSec={PX_PER_SEC}
           totalPx={trackPxWidth}
           selectedIds={selectedIds}
           toggleSelect={toggleSelect}
           trim={trim}
           dragPreviewItems={previewItemsByLayer.get(layerIdx) ?? EMPTY_PREVIEW}
-          dragInsertAt={isDropTarget ? dragPreview!.insertAt : null}
-          dragRippleLength={isDropTarget ? dragPreview!.rippleLength : 0}
-          isDropTarget={isDropTarget}
-          isNewLayer={isNewLayer}
+          dragInsertAt={dragPreview && dragPreview.insertLayer === layerIdx ? dragPreview.insertAt : null}
+          dragRippleLength={dragPreview && dragPreview.insertLayer === layerIdx ? dragPreview.rippleLength : 0}
           draggingIds={draggingIds}
           onDragUpdate={updateDragPreview}
           onDragCommit={commitDrag}
           onDragCancel={cancelDrag}
         />
-      );
-    });
+      )),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layerCount, segmentsByLayer, PX_PER_SEC, trackPxWidth, selectedIds, dragPreview, draggingIds, previewItemsByLayer]);
+    [layerCount, segmentsByLayer, PX_PER_SEC, trackPxWidth, selectedIds, dragPreview, draggingIds, previewItemsByLayer],
+  );
 
   const onRulerMouseDown = (e: React.MouseEvent) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -932,17 +877,10 @@ export default function EditStudio() {
         if (e.shiftKey) redo(); else undo();
       }
       if (mod && (e.key === "y" || e.key === "Y")) { e.preventDefault(); redo(); }
-      if (mod && (e.key === "a" || e.key === "A")) {
-        const tag = (e.target as HTMLElement)?.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable) return;
-        e.preventDefault();
-        setSelectedIds(new Set(segments.map((s) => s.id)));
-        toast.success(`${segments.length} clip(s) selecionado(s)`);
-      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [time, selectedIds, segments]); // eslint-disable-line
+  }, [time, selectedIds]); // eslint-disable-line
 
   const chapters = segments
     .filter((s) => s.kind === "slide")
@@ -1528,7 +1466,7 @@ const KIND_STYLE: Record<Kind, { color: string; Icon: any }> = {
   image: { color: "bg-amber-500/30 ring-amber-500/60", Icon: Film },
 };
 
-const LayerRow = memo(function LayerRow({ layerIdx, segs, pxPerSec, totalPx, selectedIds, toggleSelect, trim, dragPreviewItems, dragInsertAt, dragRippleLength, draggingIds, onDragUpdate, onDragCommit, onDragCancel, isDropTarget, isNewLayer }: {
+const LayerRow = memo(function LayerRow({ layerIdx, segs, pxPerSec, totalPx, selectedIds, toggleSelect, trim, dragPreviewItems, dragInsertAt, dragRippleLength, draggingIds, onDragUpdate, onDragCommit, onDragCancel }: {
   layerIdx: number;
   segs: Segment[];
   pxPerSec: number;
@@ -1543,22 +1481,14 @@ const LayerRow = memo(function LayerRow({ layerIdx, segs, pxPerSec, totalPx, sel
   onDragUpdate: (id: string, proposedStart: number, proposedLayer: number) => void;
   onDragCommit: () => void;
   onDragCancel: () => void;
-  isDropTarget?: boolean;
-  isNewLayer?: boolean;
 }) {
   return (
     <div className="flex items-stretch">
-      <div className={`flex w-20 shrink-0 items-center gap-1.5 py-2 text-xs ${isDropTarget ? "text-primary font-medium" : "text-muted-foreground"}`}>
-        <Plus className="h-3 w-3 opacity-50" /> {isNewLayer ? "Nova camada" : `Camada ${layerIdx + 1}`}
+      <div className="flex w-20 shrink-0 items-center gap-1.5 py-2 text-xs text-muted-foreground">
+        <Plus className="h-3 w-3 opacity-50" /> Camada {layerIdx + 1}
       </div>
       <div
-        className={`relative my-1 h-9 rounded transition-colors ${
-          isDropTarget
-            ? "bg-primary/15 ring-1 ring-primary/70"
-            : isNewLayer
-              ? "bg-primary/5 ring-1 ring-dashed ring-primary/40"
-              : "bg-[hsl(var(--track-bg))] ring-1 ring-border/50"
-        }`}
+        className="relative my-1 h-9 rounded bg-[hsl(var(--track-bg))] ring-1 ring-border/50"
         style={{ width: totalPx }}
       >
         {segs.map((s) => {
