@@ -661,7 +661,14 @@ export default function EditStudio() {
           }
         }
       }
-      return placed.map((s) => byId.get(s.id) ?? s);
+      const result = placed.map((s) => byId.get(s.id) ?? s);
+      // If a clip was dragged above layer 0, shift everything down so layers
+      // remain non-negative. This effectively creates a brand-new top layer.
+      const minL = result.reduce((a, s) => Math.min(a, s.layer), 0);
+      if (minL < 0) {
+        return result.map((s) => ({ ...s, layer: s.layer - minL }));
+      }
+      return result;
     });
   };
 
